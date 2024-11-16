@@ -1,0 +1,9 @@
+version: "3.3"
+services:
+  b-hunters-sqlmap:
+    build: ./
+    environment:
+      - process_num=15
+      - process_timeout=600
+    volumes:
+    - ./b-hunters.ini:/etc/b-hunters/b-hunters.ini
