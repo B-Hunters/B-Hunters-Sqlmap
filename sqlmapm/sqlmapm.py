@@ -38,7 +38,7 @@ def runsqlmap(url):
                     "-u", url, 
                     "-b", 
                     "-o", 
-                    "--smart", 
+                    "--answers='problems=y,involving it=n'",
                     "--batch", 
                     "--disable-coloring", 
                     "--random-agent", 
@@ -63,7 +63,56 @@ def runsqlmap(url):
     except Exception as e:
         raise Exception(e)
         # result=[]
+    if result==[] or result=="":
+        return []
+        
     return url,result
+
+def runsqlmapsubdomain(url):
+    
+    outputdir=generate_random_filename()
+    result=""
+    try:
+        # for i in data:
+        if url != "":
+            try:
+                # Disable certificate verification with verify=False
+                p1 = subprocess.Popen([
+                    "python3", 
+                    "/app/sqlmap/sqlmap.py", 
+                    "-u", url, 
+                    "-b", 
+                    "-o", 
+                    "--batch", 
+                    "--answers='problems=y,involving it=n'",
+                    "--disable-coloring", 
+                    "--random-agent", 
+                    "--risk", "3",
+                    "--level", "3",
+                    "--crawl","3",
+                    "--forms",
+                    f"--output-dir={outputdir}", 
+                    "--tamper=between,randomcase,space2comment,space2morehash"
+                ], stdout=subprocess.PIPE)
+                try:
+                    output, _ = p1.communicate(timeout=int(os.getenv("process_timeout","600")))  # 10 minutes timeout
+                except subprocess.TimeoutExpired:
+                    p1.kill()
+                if os.path.isdir(outputdir):
+                    subfolders = [f.path for f in os.scandir(outputdir) if f.is_dir()]
+                    if subfolders:
+                        log_folder = subfolders[0]
+                        log_path = os.path.join(log_folder, "log")
+                        if os.path.getsize(log_path) > 0:
+                            with open(log_path, 'r') as file:
+                                result = file.read()
+            except requests.exceptions.RequestException:
+                pass
+        
+    except Exception as e:
+        raise Exception(e)
+        # result=[]
+    return [url,result]
 
 class sqlmapm(BHunters):
     """
@@ -76,6 +125,9 @@ class sqlmapm(BHunters):
     filters = [
         {
             "type": "paths", "stage": "scan"
+        },
+        {
+            "type": "subdomain", "stage": "new"
         }
     ]
 
@@ -103,6 +155,7 @@ class sqlmapm(BHunters):
         p4 = subprocess.Popen(["qsreplace","FUZZ"], stdin=p3.stdout, stdout=subprocess.PIPE)
         p3.stdout.close()
         data2=self.checklinksexist(self.subdomain,p4.stdout.read().decode("utf-8"))
+        p4.stdout.close()
         
         # # URL encode each entry in data2
         dataencoded = [url.replace(' ', '%20') for url in data2 if url]
@@ -129,14 +182,20 @@ class sqlmapm(BHunters):
     def process(self, task: Task) -> None:
         url = task.payload["data"]
         subdomain=task.payload["subdomain"]
+        subdomain = re.sub(r'^https?://', '', subdomain)
+        subdomain = subdomain.rstrip('/')
         self.subdomain=subdomain
         source=task.payload["source"]
         self.update_task_status(subdomain,"Started")
         self.log.info("Starting processing new url")
         self.log.warning(f"{source} {url}")
+
         try:
-                
-            result=self.scan(url,source)
+            if source == "subrecon":
+                result=runsqlmapsubdomain(url)
+            else:
+                        
+                result=self.scan(url,source)
             db=self.db
             collection=db["domains"]
             if result !=None and result !=[]:
