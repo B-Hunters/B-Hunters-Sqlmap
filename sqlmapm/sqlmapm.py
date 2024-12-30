@@ -16,6 +16,8 @@ import requests.exceptions
 import tempfile
 import random
 import string
+from bson.objectid import ObjectId
+
 def generate_random_filename():
     temp_dir = tempfile.gettempdir()
     random_name = ''.join(random.choices(string.ascii_letters + string.digits, k=10))  # Generate a random string
@@ -64,7 +66,7 @@ def runsqlmap(url):
         raise Exception(e)
         # result=[]
     if result==[] or result=="":
-        return []
+        return [],[]
         
     return url,result
 
@@ -112,6 +114,9 @@ def runsqlmapsubdomain(url):
     except Exception as e:
         raise Exception(e)
         # result=[]
+    if result=="":
+        return []
+
     return [url,result]
 
 class sqlmapm(BHunters):
@@ -136,7 +141,7 @@ class sqlmapm(BHunters):
                
     def scan(self,url,source):
         try:    
-            data=self.backend.download_object("bhunters",f"{source}_"+self.encode_filename(url))
+            data=self.backend.download_object("bhunters",f"{source}_"+self.scanid+"_"+self.encode_filename(url))
         except Exception as e:
             raise Exception(e)
 
@@ -168,7 +173,7 @@ class sqlmapm(BHunters):
                 pool.close()
                 pool.join()
                 for res in result_array:
-                    if res[1]!="":
+                    if res[1]!="" and res[1]!=[]:
                         result.append(res)
 
             # result=runsstichecker(data2)
@@ -178,7 +183,7 @@ class sqlmapm(BHunters):
         os.remove(filename)
         return result
         
-        
+        RtTNyX9Eeu8W
     def process(self, task: Task) -> None:
         url = task.payload["data"]
         subdomain=task.payload["subdomain"]
@@ -189,17 +194,19 @@ class sqlmapm(BHunters):
         self.update_task_status(subdomain,"Started")
         self.log.info("Starting processing new url")
         self.log.warning(f"{source} {url}")
-
+        report_id=task.payload_persistent["report_id"]
+        self.scanid=task.payload_persistent["scan_id"]
         try:
             if source == "subrecon":
                 result=runsqlmapsubdomain(url)
             else:
                         
                 result=self.scan(url,source)
+            self.waitformongo()    
             db=self.db
-            collection=db["domains"]
+            collection=db["reports"]
             if result !=None and result !=[]:
-                collection.update_one({"Domain": subdomain}, {"$push": {f"Vulns.SQLMap": {"$each": result}}})
+                collection.update_one({"_id": ObjectId(report_id)}, {"$push": {f"Vulns.SQLMap": {"$each": result}}})
                 resultarr=[]
                 for i in result:
                     resultarr.append(" ".join(i))
