@@ -17,6 +17,7 @@ import tempfile
 import random
 import string
 from bson.objectid import ObjectId
+from functools import partial
 
 def generate_random_filename():
     temp_dir = tempfile.gettempdir()
@@ -24,7 +25,17 @@ def generate_random_filename():
     filename = os.path.join(temp_dir, random_name)
     return filename
 
-def runsqlmap(url):
+def sqlmap_header_args(headers):
+    """The arguments that give sqlmap the session headers.
+
+    Sqlmap takes them as ``--headers`` and sends them with every
+    request it makes.  Several headers are separated by a newline.
+    """
+    if not headers:
+        return []
+    return ["--headers", "\n".join(f"{name}: {value}" for name, value in headers.items())]
+
+def runsqlmap(url,headers=None):
     
     outputdir=generate_random_filename()
     result=""
@@ -46,7 +57,7 @@ def runsqlmap(url):
                     "--random-agent", 
                     f"--output-dir={outputdir}", 
                     "--tamper=between,randomcase,space2comment"
-                ], stdout=subprocess.PIPE)
+                ] + sqlmap_header_args(headers), stdout=subprocess.PIPE)
                 try:
                     output, _ = p1.communicate(timeout=int(os.getenv("process_timeout","600")))  # 10 minutes timeout
                 except subprocess.TimeoutExpired:
@@ -70,7 +81,7 @@ def runsqlmap(url):
         
     return url,result
 
-def runsqlmapsubdomain(url):
+def runsqlmapsubdomain(url,headers=None):
     
     outputdir=generate_random_filename()
     result=""
@@ -95,7 +106,7 @@ def runsqlmapsubdomain(url):
                     "--forms",
                     f"--output-dir={outputdir}", 
                     "--tamper=between,randomcase,space2comment,space2morehash"
-                ], stdout=subprocess.PIPE)
+                ] + sqlmap_header_args(headers), stdout=subprocess.PIPE)
                 try:
                     output, _ = p1.communicate(timeout=int(os.getenv("process_timeout","600")))  # 10 minutes timeout
                 except subprocess.TimeoutExpired:
@@ -139,7 +150,7 @@ class sqlmapm(BHunters):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
                
-    def scan(self,url,source):
+    def scan(self,url,source,headers):
         try:    
             data=self.backend.download_object("bhunters",f"{source}_"+self.scanid+"_"+self.encode_filename(url))
         except Exception as e:
@@ -169,7 +180,7 @@ class sqlmapm(BHunters):
         try:
             if data2 != []:
                 pool = multiprocessing.Pool(processes=int(os.getenv("process_num","15")))
-                result_array = pool.map(runsqlmap, dataencoded)
+                result_array = pool.map(partial(runsqlmap, headers=headers), dataencoded)
                 pool.close()
                 pool.join()
                 for res in result_array:
@@ -197,11 +208,12 @@ class sqlmapm(BHunters):
         report_id=task.payload_persistent["report_id"]
         self.scanid=task.payload_persistent["scan_id"]
         try:
+            headers=self.auth_headers(task)
             if source == "subrecon":
-                result=runsqlmapsubdomain(url)
+                result=runsqlmapsubdomain(url,headers)
             else:
                         
-                result=self.scan(url,source)
+                result=self.scan(url,source,headers)
             self.waitformongo()    
             db=self.db
             collection=db["reports"]
