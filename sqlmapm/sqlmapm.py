@@ -55,6 +55,19 @@ def runsqlmap(url,headers=None):
                     "--batch", 
                     "--disable-coloring", 
                     "--random-agent", 
+                    # The scan hands sqlmap the root of the target, which
+                    # carries no parameter of its own: the parameters live
+                    # in the pages the target links to.  The level, the
+                    # risk and the technique set say how deep sqlmap looks,
+                    # and the crawl says where it looks.
+                    "--level=3",
+                    "--risk=2",
+                    "--crawl=2",
+                    "--technique=BEUSTQ",
+                    # An application that answers 401 is protected, not
+                    # broken: sqlmap must not stop the run because of it.
+                    "--ignore-code=401",
+                    "--threads=4",
                     f"--output-dir={outputdir}", 
                     "--tamper=between,randomcase,space2comment"
                 ] + sqlmap_header_args(headers), stdout=subprocess.PIPE)
